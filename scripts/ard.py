@@ -16,9 +16,10 @@ import time
 import warnings
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
-from MEAI_TSM.GP import make_and_fit_classifier
+from MEAI_TSM.GP import make_and_fit_classifier_ard
 from MEAI_TSM.GP import compute_accuracy
 from MEAI_TSM.GP import cluster_lengthscales
+from MEAI_TSM.GP import ard_lengthscales
 from gpytorch.likelihoods import DirichletClassificationLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from MEAI_TSM.read_data import generate_data
@@ -36,8 +37,7 @@ print('device', torch.cuda.device_count())
 nfeature=12
 rank=2
 seed=17
-front='231r2ae-2'
-basis = torch.randn(nfeature, rank, dtype=torch.float64) / float(rank)
+front='17r2ae-2'
 group=[['PbFCl','ZrSiS-UP2','ZrSiTe','AmTe2-x','PrOI','Cu2Sb'],['ZrCuSiAs-HfCuSi2','LaZn0.5Sb2'],['CaBe2Ge2']]
 X1,X0 = generate_data(group)
 buffer1 = torch.tensor(X1[0]+X1[1], dtype=torch.float64)
@@ -45,15 +45,13 @@ buffer0 = torch.tensor(X0[0]+X0[1], dtype=torch.float64)
 print('totallen',len(buffer1)+len(buffer0))
 buffer1 = buffer1.to(device)
 buffer0 = buffer0.to(device)
-acc_list, acc_list2, state_dict_list, mll_list, tmll_list, acc0_list, acc1_list, proj_list, prolen_list, ardlen_list, mean_list,tmll2_list = [], [], [], [], [], [], [], [], [], [], [], []
-summatrix = torch.zeros([nfeature, nfeature], dtype=torch.float)
-summatrix = summatrix.to(device)
-rawmatrix = torch.zeros([nfeature, nfeature], dtype=torch.float)
-rawmatrix = rawmatrix.to(device)
+acc_list, acc_list2, state_dict_list, mll_list, tmll_list, acc0_list, acc1_list, mean_list,tmll2_list = [], [], [], [], [], [], [], [], []
 
-r1 = torch.zeros([nfeature, nfeature], dtype=torch.float)
-r1 = rawmatrix.to(device)
-for i in range(12):
+ardmatrix = torch.zeros([nfeature, nfeature], dtype=torch.float)
+ardmatrix = ardmatrix.to(device)
+
+
+for i in range(6):
     print("trying seed: ", i)
     torch.random.manual_seed(i+seed)
 
@@ -101,19 +99,15 @@ for i in range(12):
         print(train_x.shape, train_y.shape)
         with gpytorch.settings.max_cholesky_size(2000):
 
-            model1, mll1 = make_and_fit_classifier(train_x, train_y, inbuffer=basis, rank=rank,
+            model1, mll1 = make_and_fit_classifier_ard(train_x, train_y, rank=rank,
                                                    lr=0.05)
             testacc, trainacc, acc0, acc1 = compute_accuracy(model1, model1.likelihood, test_x, test_y,
                                                                           train_x, train_y)
-            rmatrix, smatrix, proj, prolen, ardlen, mmean = cluster_lengthscales(model1)
+            ard_matrix, mmean = ard_lengthscales(model1)
         print('means:',mmean)
-        summatrix = summatrix + smatrix.detach()
-        rawmatrix = rawmatrix + rmatrix.detach()
-        proj_list.append(proj)
-        prolen_list.append(prolen)
-        ardlen_list.append(ardlen)
+        
+        ardmatrix = ardmatrix + ard_matrix.detach()
         mean_list.append(mmean)
-        # r1=r1+r11
         acc_list.append(testacc)
         acc_list2.append(trainacc)
         acc0_list.append(acc0)
@@ -142,17 +136,12 @@ for i in range(12):
         #print(-tmll(output, likelihood1.transformed_targets.to(device)).sum(),-tmll2.cpu().detach().numpy())
 
 
-summatrix1 = summatrix.cpu()
-print(summatrix1.shape)
-for i in range(len(summatrix1)):
-    for j in range(len(summatrix1)):
-        if j <= i:
-            summatrix1[i][j] = 0.
-splot=summatrix1.data.div(60.).numpy()
-splot=rescale(splot)
+ardmatrix1 = ardmatrix.cpu()
+print(ardmatrix1.shape)
+ardplot=ardmatrix1.data.div(30.).numpy()
 fig = plt.figure(figsize=(6, 6))
 ax = plt.subplot()
-f = plt.imshow(splot, cmap=mpl.cm.PiYG, vmin=-1, vmax=1.)
+f = plt.imshow(ardplot, cmap=mpl.cm.BrBG, vmax=np.max(np.abs(ardplot)), vmin=-np.max(np.abs(ardplot)))
 plt.rcParams['font.family']='Times New Roman'
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
@@ -176,54 +165,14 @@ plt.yticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
            rotation=0,size=13)
 plt.tick_params(length=10, width=2, labelsize=13)
 #plt.title("Correlation Matrix", fontsize=20)
-cb=plt.colorbar(fraction=0.045)
-cb.set_ticks([-1.,-0.8, -0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6, 0.8 ,1.])
-cb.set_ticklabels([-1, -0.93, -0.87, -0.8, -0.4, 0, 0.4, 0.8, 0.87, 0.93, 1])
-cb.ax.tick_params(labelsize=14)
-cb.outline.set_linewidth(1.5)
-plt.savefig(front+str(nfeature) + "M_z_1.svg", bbox_inches="tight", transparent='true')
-
-rawmatrix1 = rawmatrix.cpu()
-maxraw = 0.
-for i in range(len(rawmatrix1)):
-    for j in range(len(rawmatrix1)):
-        if j < i:
-            rawmatrix1[i][j] = 0.
-for i in range(len(rawmatrix1)):
-    for j in range(len(rawmatrix1[i])):
-        if abs(rawmatrix1[i][j]) > maxraw:
-            maxraw = rawmatrix1[i][j].data
-maxraw = maxraw / 60.
-fig = plt.figure(figsize=(6, 6))
-ax = plt.subplot()
-f = plt.imshow(rawmatrix1.data.div(60.), cmap=mpl.cm.BrBG, vmax=maxraw, vmin=-maxraw)
-ax.spines['top'].set_visible(False)
-ax.spines['right'].set_visible(False)
-plt.gca().invert_yaxis()
-ax=plt.gca()
-ax.spines['bottom'].set_linewidth(2)
-ax.spines['top'].set_linewidth(2)
-ax.spines['right'].set_linewidth(2)
-ax.spines['left'].set_linewidth(2)
-"""plt.xticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=60,size=13)#'$NE_{max}$'
-plt.yticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=0,size=13)"""
-plt.xticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$NE_{max}$', '$NE_{min}$', '$NE_{sq}$', '$NE_{tot}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=60,size=13)
-plt.yticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$NE_{max}$', '$NE_{min}$', '$NE_{sq}$', '$NE_{tot}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=0,size=13)
-plt.tick_params(length=10, width=2, labelsize=13)
-#plt.title("Kernel Matrix", fontsize=20)
 cb=plt.colorbar(fraction=0.045, format='%.1f')
-cb.set_ticks([-maxraw,-maxraw/2., 0, maxraw/2. ,maxraw])
+maxard=np.max(np.abs(ardplot))
+cb.set_ticks([-maxard,-maxard/2., 0, maxard/2. ,maxard])
 cb.ax.tick_params(labelsize=14)
 cb.outline.set_linewidth(1.5)
-plt.savefig(front+str(nfeature) + "LL+A_1.svg", bbox_inches="tight", transparent='true')
+plt.savefig(front+str(nfeature) + "ARD.svg", bbox_inches="tight", transparent='true')
+
+
 
 workbook = xlwt.Workbook(encoding='utf-8')
 worksheet = workbook.add_sheet('sheet1')
@@ -244,56 +193,7 @@ worksheet.write(9, 0, label=np.mean(acc0_list))
 worksheet.write(9, 2, label=np.mean(acc1_list))
 
 workbook.save(front+str(nfeature) + 'mll_1.xls')
-goodpo = []
-countpo = []
-goodne = []
-countne = []
-for i in range(nfeature):
-    for j in range(i + 1, nfeature):
-        if summatrix1.data.div(60.).numpy()[i][j] > 0.:
-            goodpo.append(summatrix1.data.div(60.).numpy()[i][j])
-            countpo.append([i + 1, j + 1])
-        elif summatrix1.data.div(60.).numpy()[i][j] < 0.:
-            goodne.append(summatrix1.data.div(60.).numpy()[i][j])
-            countne.append([i + 1, j + 1])
-for i in range(len(goodpo)):
-    maxx = goodpo[i]
-    place = i
-    for j in range(i + 1, len(goodpo)):
-        if abs(goodpo[j]) > abs(maxx):
-            maxx = goodpo[j]
-            place = j
-    goodpo[place] = goodpo[i]
-    goodpo[i] = maxx
-    tt = countpo[place]
-    countpo[place] = countpo[i]
-    countpo[i] = tt
 
-for i in range(len(goodne)):
-    maxx = goodne[i]
-    place = i
-    for j in range(i + 1, len(goodne)):
-        if abs(goodne[j]) > abs(maxx):
-            maxx = goodne[j]
-            place = j
-    goodne[place] = goodne[i]
-    goodne[i] = maxx
-    tt = countne[place]
-    countne[place] = countne[i]
-    countne[i] = tt
-workbook = xlwt.Workbook(encoding='utf-8')
-worksheet = workbook.add_sheet('sheet1')
-for i in range(15):
-    print(goodpo[i], countpo[i])
-    worksheet.write(0, i, label=goodpo[i])
-    worksheet.write(1, i, label=float(countpo[i][0]))
-    worksheet.write(2, i, label=float(countpo[i][1]))
-
-for i in range(15):
-    worksheet.write(4, i, label=goodne[i])
-    worksheet.write(5, i, label=float(countne[i][0]))
-    worksheet.write(6, i, label=float(countne[i][1]))
-workbook.save(front+str(nfeature) + 'order_1.xls')
 
 workbook = xlwt.Workbook(encoding='utf-8')
 worksheet = workbook.add_sheet('sheet1')

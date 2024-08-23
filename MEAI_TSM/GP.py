@@ -67,11 +67,12 @@ class OptimizationIteration(NamedTuple):
 
 
 def fit_gpytorch_torch(
-    projection,
-    projection_len,
     ard_len,
     mll: MarginalLogLikelihood,
-    gamma=0.0001,
+    gamma=0.1,
+    projection=None,
+    projection_len=None,
+    l1=False,
     bounds: Optional[ParameterBounds] = None,
     optimizer_cls: Optimizer = Adam,
     options: Optional[Dict[str, Any]] = None,
@@ -162,6 +163,10 @@ def fit_gpytorch_torch(
             # we sum here to support batch mode
             args = [output, train_targets] + _get_extra_mll_args(mll)
             loss = -mll(*args).sum()
+            if l1==True:
+                ard = torch.diag(torch.squeeze(ard_len.reciprocal() ** 2))
+                l1_loss=ard.abs().sum()*gamma
+                loss+=l1_loss
             loss.backward(retain_graph=True)
         loss_trajectory.append(loss.item())
         for name, param in mll.named_parameters():
@@ -221,6 +226,25 @@ class DirichletGPModel(ExactGP):
         covar_x = self.covar_module_projection(proj_x) * self.covar_warp(x)#self.covar_module_ard(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
+
+class DirichletGPModelARD(ExactGP):
+    def __init__(self, train_x, train_y, likelihood, num_classes, rank=6, interval1=100.):
+        super(DirichletGPModelARD, self).__init__(train_x, train_y, likelihood)
+        self.mean_module = ConstantMean(batch_shape=torch.Size((num_classes,)))
+        self.covar_module_ard = RBFKernel(
+            ard_num_dims=train_x.shape[-1],
+            lengthscale_constraint=gpytorch.constraints.Interval(0.01, interval1)
+        )
+        self.covar_warp = gpytorch.kernels.ScaleKernel(self.covar_module_ard)
+
+
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_warp(x)
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
 class ExactGPmodel(ExactGP):
     def __init__(self, train_x, train_y, likelihood,initialization, rank=6, interval1=100.):
         super(ExactGPmodel, self).__init__(train_x, train_y, likelihood)
@@ -272,7 +296,24 @@ def make_and_fit_classifier(train_x, train_y, inbuffer, maxiter=2000, lr=0.1, ra
     model = model.to(train_x)
 
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
-    _, info_dict = fit_gpytorch_torch(model.projection, model.covar_module_projection.lengthscale, model.covar_module_ard.lengthscale, mll, options={"maxiter": 1000, "lr": lr})
+    _, info_dict = fit_gpytorch_torch(model.covar_module_ard.lengthscale, mll, options={"maxiter": 1000, "lr": lr})
+    print("Final MLL: ", info_dict["fopt"])
+
+    return model, info_dict["fopt"]
+
+
+
+
+def make_and_fit_classifier_ard(train_x, train_y, maxiter=2000, lr=0.1, rank=6, interval1=100.):
+    likelihood = DirichletClassificationLikelihood(train_y, alpha_epsilon=0.01, learn_additional_noise=True)
+    model = DirichletGPModelARD(
+        train_x, likelihood.transformed_targets, likelihood, num_classes=likelihood.num_classes,
+        rank=rank, interval1=interval1
+    )
+    model = model.to(train_x)
+
+    mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    _, info_dict = fit_gpytorch_torch(model.covar_module_ard.lengthscale, mll, l1=True, options={"maxiter": 1000, "lr": lr})
     print("Final MLL: ", info_dict["fopt"])
 
     return model, info_dict["fopt"]
@@ -369,6 +410,12 @@ def cluster_lengthscales(model, thresh_pct=0.15):
     estimated_dist = covar_inv_diags.unsqueeze(0) + covar_inv_diags.unsqueeze(1) - 2. * estimated_covar
 
     return estimated_covar, estimated_corr, model.projection.cpu().detach().numpy(), model.covar_module_projection.lengthscale.cpu().detach().numpy(), model.covar_module_ard.lengthscale.cpu().detach().numpy(), model.mean_module.constant.cpu().detach().numpy()
+
+
+def ard_lengthscales(model):
+    print('Scale', model.covar_warp.outputscale.cpu().data)
+    ard_matrix=torch.diag(torch.squeeze(model.covar_module_ard.lengthscale.reciprocal() ** 2))
+    return ard_matrix, model.mean_module.constant.cpu().detach().numpy()
 
 def sign(number):
     if number>=0:
