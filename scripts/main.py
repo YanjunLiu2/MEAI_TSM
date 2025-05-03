@@ -162,12 +162,7 @@ ax.spines['bottom'].set_linewidth(2)
 ax.spines['top'].set_linewidth(2)
 ax.spines['right'].set_linewidth(2)
 ax.spines['left'].set_linewidth(2)
-"""plt.xticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=60,size=13)#'$NE_{max}$'
-plt.yticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=0,size=13)"""
+
 plt.xticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
            ['$\chi_{min}$', '$\chi_{sq}$', '$NE_{max}$', '$NE_{min}$', '$NE_{sq}$', '$NE_{tot}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
            rotation=60,size=13)#'$NE_{max}$'
@@ -205,12 +200,7 @@ ax.spines['bottom'].set_linewidth(2)
 ax.spines['top'].set_linewidth(2)
 ax.spines['right'].set_linewidth(2)
 ax.spines['left'].set_linewidth(2)
-"""plt.xticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=60,size=13)#'$NE_{max}$'
-plt.yticks([0, 1, 2, 3, 4, 5, 6, 7],
-           ['$\chi_{min}$', '$\chi_{sq}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
-           rotation=0,size=13)"""
+
 plt.xticks([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
            ['$\chi_{min}$', '$\chi_{sq}$', '$NE_{max}$', '$NE_{min}$', '$NE_{sq}$', '$NE_{tot}$', '$d_{sq}$', '$d_{nn}$', 'fcc', '$EA_{max}$', '$EA_{min}$', '$EA_{sq}$'],
            rotation=60,size=13)
